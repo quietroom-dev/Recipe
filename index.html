@@ -78,4 +78,147 @@ $("tab-list").onclick=()=>show("list");$("tab-add").onclick=()=>{reset();show("a
 let sx=0,sy=0;document.addEventListener("touchstart",e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});document.addEventListener("touchend",e=>{let dx=sx-e.changedTouches[0].clientX,dy=sy-e.changedTouches[0].clientY;if(page=="detail"||Math.abs(dx)<50||Math.abs(dx)<Math.abs(dy))return;let i=["list","add","shopping","stock"].indexOf(page);show(["list","add","shopping","stock"][(i+(dx>0?1:-1)+4)%4])},{passive:true});
 (async()=>{try{await openDB();if(localStorage.getItem("recipes")||localStorage.getItem("shopping")||localStorage.getItem("stockItems")||localStorage.getItem("groupOrder"))await migrate();else await load();show("list")}catch(e){console.error(e);alert("IndexedDBを初期化できませんでした")}})();
 </script>
+
+<section id="fullBackupPanel" style="margin:24px 16px 110px;padding:16px;border:1px solid #dbe3ef;border-radius:14px;background:#fff">
+  <h3 style="margin:0 0 8px">画像付きバックアップ</h3>
+  <p style="margin:0 0 12px;font-size:13px;color:#667085">
+    レシピ本文・カテゴリ・買い物リスト・在庫に加えて、登録画像もZIPに保存します。
+  </p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button type="button" onclick="backupWithImages()" style="padding:10px 14px;border:0;border-radius:10px;background:#1677ff;color:#fff;font-weight:700">
+      画像付きでバックアップ
+    </button>
+    <label style="padding:10px 14px;border-radius:10px;background:#eef4ff;color:#1677ff;font-weight:700;cursor:pointer">
+      画像付きバックアップを復元
+      <input type="file" accept=".zip,application/zip" style="display:none" onchange="if(this.files[0])restoreWithImages(this.files[0])">
+    </label>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+async function backupWithImages(){
+  try{
+    if(!window.JSZip) throw new Error("ZIPライブラリを読み込めませんでした");
+    const db=await backupOpenDB();
+    const recipes=await backupGetAll(db,"recipes");
+    const shopping=await backupGetAll(db,"shopping");
+    const stock=await backupGetAll(db,"stock");
+    const groupOrder=await backupSetting(db,"groupOrder");
+
+    const meta=[];
+    const zip=new JSZip();
+    for(const r of recipes){
+      const c=JSON.parse(JSON.stringify(r));
+      delete c.image;
+      delete c.imageBlob;
+      meta.push(c);
+      const b=await backupImage(db,r.id);
+      if(b) zip.file("images/"+r.id+".jpg",b);
+    }
+    zip.file("recipes.json",JSON.stringify(meta,null,2));
+    zip.file("settings.json",JSON.stringify({
+      groupOrder:groupOrder||[],shopping:shopping||[],stock:stock||[],
+      formatVersion:2,exportedAt:new Date().toISOString()
+    },null,2));
+
+    const blob=await zip.generateAsync({type:"blob",compression:"DEFLATE"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download="recipe-app-backup-"+new Date().toISOString().slice(0,10)+".zip";
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+  }catch(e){
+    console.error(e); alert("画像付きバックアップに失敗しました: "+e.message);
+  }
+}
+function backupOpenDB(){
+  return new Promise((res,rej)=>{
+    const q=indexedDB.open("RecipeAppDB");
+    q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error);
+  });
+}
+function backupGetAll(db,name){
+  return new Promise((res,rej)=>{
+    if(!db.objectStoreNames.contains(name)) return res([]);
+    const q=db.transaction(name,"readonly").objectStore(name).getAll();
+    q.onsuccess=()=>res(q.result||[]); q.onerror=()=>rej(q.error);
+  });
+}
+function backupSetting(db,key){
+  return new Promise((res,rej)=>{
+    if(!db.objectStoreNames.contains("settings")) return res(null);
+    const q=db.transaction("settings","readonly").objectStore("settings").get(key);
+    q.onsuccess=()=>res(q.result ? (q.result.value??q.result) : null);
+    q.onerror=()=>rej(q.error);
+  });
+}
+function backupImage(db,id){
+  return new Promise((res,rej)=>{
+    if(!db.objectStoreNames.contains("images")) return res(null);
+    const q=db.transaction("images","readonly").objectStore("images").get(id);
+    q.onsuccess=()=>{
+      const v=q.result;
+      res(v ? (v.blob||v.image||(v instanceof Blob?v:null)) : null);
+    };
+    q.onerror=()=>rej(q.error);
+  });
+}
+async function restoreWithImages(file){
+  try{
+    if(!window.JSZip) throw new Error("ZIPライブラリを読み込めませんでした");
+    const zip=await JSZip.loadAsync(file);
+    if(!zip.file("recipes.json")) throw new Error("recipes.json がありません");
+    const recipes=JSON.parse(await zip.file("recipes.json").async("string"));
+    const settings=zip.file("settings.json")
+      ? JSON.parse(await zip.file("settings.json").async("string"))
+      : {};
+    const db=await backupOpenDB();
+
+    await backupPutMany(db,"recipes",recipes);
+    if(db.objectStoreNames.contains("shopping")) await backupReplace(db,"shopping",settings.shopping||[]);
+    if(db.objectStoreNames.contains("stock")) await backupReplace(db,"stock",settings.stock||[]);
+    if(db.objectStoreNames.contains("settings")) await backupPutSetting(db,"groupOrder",settings.groupOrder||[]);
+
+    if(db.objectStoreNames.contains("images")){
+      for(const r of recipes){
+        const f=zip.file("images/"+r.id+".jpg");
+        if(f) await backupPutImage(db,r.id,await f.async("blob"));
+      }
+    }
+    alert("画像を含むバックアップを復元しました。");
+    location.reload();
+  }catch(e){
+    console.error(e); alert("復元に失敗しました: "+e.message);
+  }
+}
+function backupPutMany(db,name,items){
+  return new Promise((res,rej)=>{
+    if(!db.objectStoreNames.contains(name)) return res();
+    const t=db.transaction(name,"readwrite"),s=t.objectStore(name);
+    items.forEach(x=>s.put(x)); t.oncomplete=res; t.onerror=()=>rej(t.error);
+  });
+}
+function backupReplace(db,name,items){
+  return new Promise((res,rej)=>{
+    const t=db.transaction(name,"readwrite"),s=t.objectStore(name);
+    s.clear(); items.forEach(x=>s.put(x)); t.oncomplete=res; t.onerror=()=>rej(t.error);
+  });
+}
+function backupPutSetting(db,key,value){
+  return new Promise((res,rej)=>{
+    const t=db.transaction("settings","readwrite");
+    t.objectStore("settings").put({key:key,value:value});
+    t.oncomplete=res; t.onerror=()=>rej(t.error);
+  });
+}
+function backupPutImage(db,id,blob){
+  return new Promise((res,rej)=>{
+    const t=db.transaction("images","readwrite");
+    t.objectStore("images").put({id:id,blob:blob});
+    t.oncomplete=res; t.onerror=()=>rej(t.error);
+  });
+}
+</script>
+
 </body></html>
