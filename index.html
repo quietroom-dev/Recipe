@@ -71,7 +71,80 @@ async function addManual(){let n=$("manual").value.trim();if(!n)return;await put
 async function renderStock(){ $("stock").innerHTML="";stock.forEach(x=>{let li=document.createElement("li");li.style="list-style:none;display:flex;justify-content:space-between;background:#fff;padding:10px;margin-bottom:5px;border-radius:8px";li.innerHTML=`<span>${esc(x.name)}</span><button style="color:red;background:none">×</button>`;li.querySelector("button").onclick=async()=>{await del(S.stock,x.id);stock=stock.filter(y=>y.id!=x.id);renderStock()};$("stock").appendChild(li)})}
 async function addStock(){let n=$("stockInput").value.trim();if(!n)return;await put(S.stock,{id:id(),name:n});$("stockInput").value="";stock=await all(S.stock);renderStock()}
 async function exportData(){let d={version:2,exportDate:new Date().toISOString(),recipes:(await all(S.recipes)).map(({imageBlob,...r})=>r),shopping:await all(S.shopping),stock:await all(S.stock),groups};let b=new Blob([JSON.stringify(d)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="my_kitchen_backup_"+new Date().toISOString().slice(0,10)+".json";a.click();toast("書き出しました（画像除外）")}
-async function importData(f){if(!f)return;try{let d=JSON.parse(await f.text()),rs=Array.isArray(d)?d:d.recipes||[];if(!confirm("現在のデータを置き換えますか？"))return;await clear(S.recipes);await clear(S.shopping);await clear(S.stock);for(let r of rs)await put(S.recipes,{...r,id:r.id||id(),imageBlob:null,createdAt:r.createdAt||Date.now()});for(let x of (d.shopping||[]))await put(S.shopping,{...x,id:x.id||id()});for(let x of (d.stock||[]))await put(S.stock,{...x,id:x.id||id()});groups=d.groups||groups;await put(S.settings,{key:"main",groups});await load();toast("復元しました")}catch(e){console.error(e);alert("読み込みに失敗しました")}}
+async function importData(f){
+  if(!f)return;
+  try{
+    const d=JSON.parse(await f.text());
+    const rs=Array.isArray(d)?d:(Array.isArray(d.recipes)?d.recipes:[]);
+    if(!rs.length)throw new Error("レシピデータがありません");
+    if(!confirm("バックアップのレシピ・買い物リスト・在庫を復元します。現在のデータは置き換わります。"))return;
+
+    // Clear current data first, then restore the complete old-format structure.
+    await clear(S.recipes);
+    await clear(S.shopping);
+    await clear(S.stock);
+
+    const now=Date.now();
+    for(const src of rs){
+      const r={
+        id:src.id||id(),
+        title:src.title||"",
+        group:src.group||"未分類",
+        sourceUrl:src.sourceUrl||"",
+        ingredients:Array.isArray(src.ingredients)?src.ingredients:[],
+        steps:Array.isArray(src.steps)?src.steps:[],
+        favorite:!!src.favorite,
+        cookCount:Number(src.cookCount)||0,
+        lastCookedDate:src.lastCookedDate||null,
+        createdAt:src.createdAt||now,
+        updatedAt:now,
+        imageBlob:null
+      };
+
+      // Original backup stores images as data:image/...;base64,...
+      // Convert them back to a binary Blob for IndexedDB.
+      if(typeof src.image==="string" && src.image.startsWith("data:image/")){
+        try{
+          r.imageBlob=await (await fetch(src.image)).blob();
+        }catch(imgErr){
+          console.warn("画像の復元に失敗:",src.title,imgErr);
+        }
+      }else if(src.imageBlob instanceof Blob){
+        r.imageBlob=src.imageBlob;
+      }
+
+      await put(S.recipes,r);
+    }
+
+    for(const x of (Array.isArray(d.shopping)?d.shopping:[])){
+      await put(S.shopping,{
+        id:x.id||id(),
+        name:x.name||"",
+        amount:x.amount||"",
+        checked:!!x.checked
+      });
+    }
+
+    for(const x of (Array.isArray(d.stock)?d.stock:[])){
+      await put(S.stock,{
+        id:x.id||id(),
+        name:typeof x==="string"?x:(x.name||"")
+      });
+    }
+
+    // Old backup uses groupOrder; the IndexedDB app uses settings.main.groups.
+    groups=Array.isArray(d.groupOrder)?d.groupOrder:[];
+    const recipeGroups=[...new Set(rs.map(r=>r.group||"未分類"))];
+    for(const g of recipeGroups)if(!groups.includes(g))groups.push(g);
+    await put(S.settings,{key:"main",groups});
+
+    await load();
+    alert("旧バックアップを完全復元しました。レシピ"+rs.length+"件・画像も復元しました。");
+  }catch(e){
+    console.error(e);
+    alert("読み込みに失敗しました: "+(e.message||e));
+  }
+}
 async function migrate(){let rr=localStorage.getItem("recipes"),ss=localStorage.getItem("shopping"),st=localStorage.getItem("stockItems"),gg=localStorage.getItem("groupOrder");if(!rr&&!ss&&!st&&!gg)return alert("旧データがありません");if(!confirm("旧localStorageからIndexedDBへ移行します。元データは残します。"))return;let R=JSON.parse(rr||"[]"),S2=JSON.parse(ss||"[]"),ST=JSON.parse(st||"[]");for(let x of R){let r={...x,id:id(),imageBlob:null,createdAt:Date.now(),updatedAt:Date.now()};if(x.image&&String(x.image).startsWith("data:image/"))try{r.imageBlob=await (await fetch(x.image)).blob()}catch(e){}delete r.image;await put("recipes",r)}for(let x of S2)await put("shopping",{id:id(),name:x.name||"",amount:x.amount||"",checked:!!x.checked});for(let x of ST)await put("stock",{id:id(),name:typeof x=="string"?x:x.name||""});groups=JSON.parse(gg||"[]");await put("settings",{key:"main",groups});await load();alert(`移行完了：レシピ${R.length}件`)}
 $("search").oninput=()=>renderList();$("clear").onclick=()=>{$("search").value="";renderList()};$("all").onclick=()=>{filter="all";$("all").classList.add("active");$("fav").classList.remove("active");renderList()};$("fav").onclick=()=>{filter="fav";$("fav").classList.add("active");$("all").classList.remove("active");renderList()};$("sort").onchange=renderList;
 $("tab-list").onclick=()=>show("list");$("tab-add").onclick=()=>{reset();show("add")};$("tab-shopping").onclick=()=>show("shopping");$("tab-stock").onclick=()=>show("stock");$("clearForm").onclick=reset;$("addGroup").onclick=addGroup;$("addStep").onclick=addStep;$("save").onclick=saveRecipe;$("cancel").onclick=()=>{reset();show("list")};$("addManual").onclick=addManual;$("clearShop").onclick=async()=>{if(confirm("リストをクリアしますか？")){await clear("shopping");shopping=[];renderShopping()}};$("addStock").onclick=addStock;$("export").onclick=exportData;$("import").onchange=e=>importData(e.target.files[0]);$("migrate").onclick=migrate;$("image").onchange=e=>{pending=e.target.files[0]||null;if(pending)$("imageBox").classList.add("hidden")};$("removeImage").onclick=()=>{removeImg=true;pending=null;$("image").value="";$("imageBox").classList.add("hidden")};
@@ -104,32 +177,43 @@ async function backupWithImages(){
     const recipes=await backupGetAll(db,"recipes");
     const shopping=await backupGetAll(db,"shopping");
     const stock=await backupGetAll(db,"stock");
-    const groupOrder=await backupSetting(db,"groupOrder");
+    const groupSetting=await backupSetting(db,"main");
+    const groupList=groupSetting?.groups || [];
 
-    const meta=[];
     const zip=new JSZip();
+    const meta=[];
+
     for(const r of recipes){
-      const c=JSON.parse(JSON.stringify(r));
-      delete c.image;
+      const c={...r};
+      const imageBlob=c.imageBlob;
       delete c.imageBlob;
       meta.push(c);
-      const b=await backupImage(db,r.id);
-      if(b) zip.file("images/"+r.id+".jpg",b);
+
+      if(imageBlob instanceof Blob){
+        const ext=(imageBlob.type||"image/jpeg").split("/")[1]||"jpg";
+        zip.file("images/"+r.id+"."+ext,imageBlob);
+      }
     }
+
     zip.file("recipes.json",JSON.stringify(meta,null,2));
     zip.file("settings.json",JSON.stringify({
-      groupOrder:groupOrder||[],shopping:shopping||[],stock:stock||[],
-      formatVersion:2,exportedAt:new Date().toISOString()
+      groupOrder:groupList,
+      shopping:shopping||[],
+      stock:stock||[],
+      formatVersion:3,
+      exportedAt:new Date().toISOString()
     },null,2));
 
     const blob=await zip.generateAsync({type:"blob",compression:"DEFLATE"});
     const a=document.createElement("a");
     a.href=URL.createObjectURL(blob);
-    a.download="recipe-app-backup-"+new Date().toISOString().slice(0,10)+".zip";
+    a.download="my_kitchen_full_backup_"+new Date().toISOString().slice(0,10)+".zip";
     a.click();
     setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+    toast("画像を含む完全バックアップを作成しました");
   }catch(e){
-    console.error(e); alert("画像付きバックアップに失敗しました: "+e.message);
+    console.error(e);
+    alert("画像付きバックアップに失敗しました: "+(e.message||e));
   }
 }
 function backupOpenDB(){
@@ -168,29 +252,66 @@ async function restoreWithImages(file){
   try{
     if(!window.JSZip) throw new Error("ZIPライブラリを読み込めませんでした");
     const zip=await JSZip.loadAsync(file);
-    if(!zip.file("recipes.json")) throw new Error("recipes.json がありません");
-    const recipes=JSON.parse(await zip.file("recipes.json").async("string"));
+    const recipesEntry=zip.file("recipes.json");
+    if(!recipesEntry)throw new Error("recipes.json がありません");
+
+    const recipes=JSON.parse(await recipesEntry.async("string"));
     const settings=zip.file("settings.json")
-      ? JSON.parse(await zip.file("settings.json").async("string"))
-      : {};
+      ?JSON.parse(await zip.file("settings.json").async("string"))
+      :{};
+
+    if(!Array.isArray(recipes)||!recipes.length)throw new Error("レシピデータがありません");
+    if(!confirm("完全バックアップを復元します。現在のデータは置き換わります。"))return;
+
     const db=await backupOpenDB();
+    await clearStoreBackup(db,"recipes");
+    await clearStoreBackup(db,"shopping");
+    await clearStoreBackup(db,"stock");
 
-    await backupPutMany(db,"recipes",recipes);
-    if(db.objectStoreNames.contains("shopping")) await backupReplace(db,"shopping",settings.shopping||[]);
-    if(db.objectStoreNames.contains("stock")) await backupReplace(db,"stock",settings.stock||[]);
-    if(db.objectStoreNames.contains("settings")) await backupPutSetting(db,"groupOrder",settings.groupOrder||[]);
+    for(const src of recipes){
+      const r={...src,imageBlob:null};
 
-    if(db.objectStoreNames.contains("images")){
-      for(const r of recipes){
-        const f=zip.file("images/"+r.id+".jpg");
-        if(f) await backupPutImage(db,r.id,await f.async("blob"));
-      }
+      // Find the image regardless of jpg/jpeg/png extension.
+      let entry=zip.file("images/"+src.id+".jpg")
+        ||zip.file("images/"+src.id+".jpeg")
+        ||zip.file("images/"+src.id+".png")
+        ||zip.file("images/"+src.id+".webp");
+
+      if(entry)r.imageBlob=await entry.async("blob");
+      await backupPutOne(db,"recipes",r);
     }
-    alert("画像を含むバックアップを復元しました。");
-    location.reload();
+
+    for(const x of (settings.shopping||[]))
+      await backupPutOne(db,"shopping",{...x,id:x.id||id()});
+    for(const x of (settings.stock||[]))
+      await backupPutOne(db,"stock",{...x,id:x.id||id()});
+
+    const gs=Array.isArray(settings.groupOrder)?settings.groupOrder:[];
+    await backupPutSetting(db,"main",{groups:gs});
+
+    await load();
+    alert("完全バックアップを復元しました。レシピ"+recipes.length+"件・画像も復元しました。");
   }catch(e){
-    console.error(e); alert("復元に失敗しました: "+e.message);
+    console.error(e);
+    alert("復元に失敗しました: "+(e.message||e));
   }
+}
+function clearStoreBackup(db,name){
+  return new Promise((res,rej)=>{
+    if(!db.objectStoreNames.contains(name))return res();
+    const t=db.transaction(name,"readwrite");
+    t.objectStore(name).clear();
+    t.oncomplete=res;
+    t.onerror=()=>rej(t.error);
+  });
+}
+function backupPutOne(db,name,item){
+  return new Promise((res,rej)=>{
+    const t=db.transaction(name,"readwrite");
+    t.objectStore(name).put(item);
+    t.oncomplete=res;
+    t.onerror=()=>rej(t.error);
+  });
 }
 function backupPutMany(db,name,items){
   return new Promise((res,rej)=>{
