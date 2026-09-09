@@ -16,14 +16,14 @@ input,textarea,select{font:inherit}.form{width:100%;padding:12px;margin-bottom:1
 .star{position:absolute;right:6px;top:6px;z-index:2;font-size:20px;color:#aaa;text-shadow:1px 1px #000;cursor:pointer}.star.on{color:#fc0}
 .group{grid-column:1/-1;background:#e5e5ea;border-radius:12px;margin:16px 0 8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center}.moves button{width:32px;height:32px;min-height:32px;padding:0;border:0;border-radius:50%}
 .ingredient{background:#fff;border-radius:14px;padding:12px;margin-bottom:12px}.step{display:flex;gap:12px;background:#fff;padding:12px;border-radius:12px;margin-bottom:8px}.step.done{opacity:.4;text-decoration:line-through}
-button{min-height:44px;padding:10px 14px;border:0;border-radius:10px;font-family:inherit;touch-action:manipulation}.main{width:100%;background:var(--primary);color:#fff;font-size:16px;font-weight:bold;margin-top:10px}.danger{background:#ff3b30;color:#fff}.outline{width:100%;background:#fff;border:1px solid var(--primary);color:var(--primary)}
+button{min-height:44px;padding:10px 14px;border:0;border-radius:10px;font-family:inherit;touch-action:manipulation}.main{width:100%;background:var(--primary);color:#fff;font-size:16px;font-weight:bold;margin-top:10px}.danger{background:#ff3b30;color:#fff}.outline{width:100%;background:#fff;border:1px solid var(--primary);color:var(--primary)}.backup-panel{margin-top:24px;padding-top:16px;border-top:1px solid #d1d1d6}.backup-panel h3{margin:0 0 10px}.backup-actions{display:flex;gap:10px}.backup-btn{flex:1;min-height:44px;padding:10px 14px;border:1px solid var(--primary);border-radius:10px;background:#fff;color:var(--primary);font:inherit;font-weight:700;text-align:center;display:flex;align-items:center;justify-content:center;cursor:pointer}button.backup-btn{background:var(--primary);color:#fff}
 .tabs{position:fixed;bottom:0;left:0;width:100%;height:90px;padding-bottom:env(safe-area-inset-bottom);display:flex;background:#fffffff0;backdrop-filter:blur(10px);border-top:1px solid #d1d1d6;z-index:10}.tabs button{flex:1;background:none;color:var(--sub);font-size:10px}.tabs button.active{color:var(--primary)}.ico{font-size:20px;display:block}
 #toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:24px;background:#000c;color:#fff;opacity:0;transition:.25s;z-index:99}#toast.show{opacity:1}
 </style>
 </head>
 <body>
 <div class="container">
-<section id="listPage"><div style="font-size:10px;color:var(--sub);text-align:right">v2.01 IndexedDB</div>
+<section id="listPage"><div style="font-size:10px;color:var(--sub);text-align:right">v2.00 IndexedDB</div>
 <div class="search"><input id="search" placeholder="材料や料理名で検索..."><span id="clear" class="clear">×</span></div>
 <div class="filters"><button id="all" class="filter active">すべて</button><button id="fav" class="filter">お気に入り</button><select id="sort" class="sort"><option value="reg">登録順</option><option value="count">調理回数</option><option value="date">最終調理日</option></select></div>
 <div id="list" class="grid"></div></section>
@@ -38,7 +38,14 @@ button{min-height:44px;padding:10px 14px;border:0;border-radius:10px;font-family
 <button id="cancel" style="width:100%;background:none;color:var(--sub)">キャンセル</button>
 </section>
 <section id="shoppingPage" class="hidden"><h2>買い物リスト</h2><div style="display:flex;gap:8px"><input id="manual" class="form" style="flex:2" placeholder="品名"><input id="amount" class="form" style="flex:1" placeholder="分量"><button id="addManual" style="background:var(--primary);color:#fff">追加</button></div><ul id="shop" style="padding:0"></ul><button id="clearShop" style="width:100%;background:#eee;color:#ff3b30">リストを空にする</button></section>
-<section id="stockPage" class="hidden"><h2>在庫リスト</h2><div style="display:flex;gap:8px"><input id="stockInput" class="form" placeholder="在庫アイテム"><button id="addStock" style="background:var(--primary);color:#fff">追加</button></div><ul id="stock" style="padding:0"></ul><hr><h3>バックアップ</h3><button id="export" class="outline">データを書き出す</button><label class="outline" style="display:block;text-align:center;margin-top:10px">データを復元する<input id="import" type="file" accept=".json" hidden></label><button id="migrate" style="width:100%;margin-top:10px;background:#fff7e6;color:#b35a00;border:1px solid #ff9500">旧localStorageデータを移行</button><p style="font-size:12px;color:var(--sub)">JSONバックアップには画像Blobは含みません。</p></section>
+<section id="stockPage" class="hidden"><h2>在庫リスト</h2><div style="display:flex;gap:8px"><input id="stockInput" class="form" placeholder="在庫アイテム"><button id="addStock" style="background:var(--primary);color:#fff">追加</button></div><ul id="stock" style="padding:0"></ul>
+<div id="fullBackupPanel" class="backup-panel">
+  <h3>バックアップ</h3>
+  <div class="backup-actions">
+    <button type="button" class="backup-btn" onclick="backupWithImages()">バックアップ</button>
+    <label class="backup-btn">復元<input id="importZip" type="file" accept=".zip,application/zip" hidden onchange="if(this.files[0])restoreWithImages(this.files[0])"></label>
+  </div>
+</div></section>
 </div>
 <nav class="tabs"><button id="tab-list" class="active"><span class="ico">📖</span>一覧</button><button id="tab-add"><span class="ico">➕</span>登録</button><button id="tab-shopping"><span class="ico">🛒</span>買い物</button><button id="tab-stock"><span class="ico">📦</span>在庫</button></nav><div id="toast"></div>
 <script>
@@ -65,157 +72,11 @@ function addStep(){let r=document.createElement("div");r.style="display:flex;gap
 function numbers(){$("steps").querySelectorAll(".sn").forEach((x,i)=>x.textContent=i+1)}
 function edit(i){let r=recipes.find(x=>x.id==i);editId=i;removeImg=false;pending=null;show("add");$("formTitle").textContent="レシピ編集";$("title").value=r.title;$("groupName").value=r.group||"";$("source").value=r.sourceUrl||"";$("ingredients").innerHTML="";(r.ingredients||[]).forEach(g=>{addGroup();let b=$("ingredients").lastElementChild;b.querySelector(".grp").value=g.name;b.querySelector(".items").innerHTML="";g.items.forEach(x=>{addItem(b.querySelector(".items"));let q=b.querySelector(".items").lastElementChild.querySelectorAll("input");q[0].value=x.name;q[1].value=x.amount})});$("steps").innerHTML="";(r.steps||[]).forEach(s=>{addStep();$("steps").lastElementChild.querySelector("textarea").value=String(s).replace(/^\d+\.\s*/,"")});if(r.imageBlob){$("imageBox").classList.remove("hidden");$("preview").src=URL.createObjectURL(r.imageBlob)}}
 async function compress(file){return new Promise((ok,no)=>{let rd=new FileReader();rd.onload=()=>{let im=new Image();im.onload=()=>{let m=1400,s=Math.min(1,m/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);c.getContext("2d").drawImage(im,0,0,c.width,c.height);c.toBlob(b=>b?ok(b):no(),"image/jpeg",.78)};im.src=rd.result};rd.readAsDataURL(file)})}
-async function saveRecipe(){let t=$("title").value.trim();if(!t)return toast("タイトルを入力してください");let ing=[];$("ingredients").querySelectorAll(":scope>.group").forEach(()=>{});document.querySelectorAll("#ingredients>div").forEach(b=>{let items=[];b.querySelectorAll(".items>div").forEach(r=>{let q=r.querySelectorAll("input");if(q[0].value.trim())items.push({name:q[0].value.trim(),amount:q[1].value.trim()})});if(items.length)ing.push({name:b.querySelector(".grp").value.trim()||"材料",items})});let steps=[...document.querySelectorAll("#steps textarea")].map(x=>x.value.trim()).filter(Boolean),old=editId?recipes.find(x=>x.id==editId):null,img=old?.imageBlob||null;if(removeImg)img=null;if(pending)img=await compress(pending);let r={id:editId||id(),title:t,group:$("groupName").value.trim()||"未分類",sourceUrl:$("source").value.trim(),imageBlob:img,ingredients:ing,steps,favorite:old?.favorite||false,cookCount:old?.cookCount||0,lastCookedDate:old?.lastCookedDate||null,createdAt:old?.createdAt||Date.now(),updatedAt:Date.now()};await put(S.recipes,r);recipes=await all(S.recipes);let g=r.group;if(!groups.includes(g)){groups.push(g);await put(S.settings,{key:"main",groups})}reset();show("list");toast("保存しました")}
+async function saveRecipe(){let t=$("title").value.trim();if(!t)return toast("タイトルを入力してください");let ing=[];$("ingredients").querySelectorAll(":scope>.group").forEach(()=>{});document.querySelectorAll("#ingredients>div").forEach(b=>{let items=[];b.querySelectorAll(".items>div").forEach(r=>{let q=r.querySelectorAll("input");if(q[0].value.trim())items.push({name:q[0].value.trim(),amount:q[1].value.trim()})});if(items.length)ing.push({name:b.querySelector(".grp").value.trim()||"材料",items})});let steps=[...document.querySelectorAll("#steps textarea")].map(x=>x.value.trim()).filter(Boolean),old=editId?recipes.find(x=>x.id==editId):null,img=old?.imageBlob||null;if(removeImg)img=null;if(pending)img=await compress(pending);let r={id:editId||id(),title:t,group:$("groupName").value.trim()||"未分類",sourceUrl:$("source").value.trim(),imageBlob:img,ingredients:ing,steps,favorite:old?.favorite||false,cookCount:old?.cookCount||0,lastCookedDate:old?.lastCookedDate||null,createdAt:old?.createdAt||Date.now(),updatedAt:Date.now()};await put(S.recipes,r);recipes=await all(S.recipes);let g=r.group;if(!groups.includes(g)){groups.push(g);await put(S.settings,{key:"main",groups})}reset();show("list");toast("保存しました");if(confirm("バックアップを取りますか？")){await backupWithImages()}}
 function renderShopping(){$("shop").innerHTML="";shopping.sort((a,b)=>+a.checked-+b.checked).forEach(x=>{let li=document.createElement("li");li.style="list-style:none;display:flex;gap:10px;align-items:center;background:#fff;padding:10px;margin-bottom:8px;border-radius:10px";li.innerHTML=`<input type=checkbox ${x.checked?"checked":""}><span style="${x.checked?"text-decoration:line-through;color:#ccc":""}">${esc(x.name)} (${esc(x.amount)})</span><button style="margin-left:auto;color:red;background:none">×</button>`;li.querySelector("input").onchange=async()=>{x.checked=!x.checked;await put(S.shopping,x);renderShopping()};li.querySelector("button").onclick=async()=>{await del(S.shopping,x.id);shopping=shopping.filter(y=>y.id!=x.id);renderShopping()};$("shop").appendChild(li)})}
 async function addManual(){let n=$("manual").value.trim();if(!n)return;await put(S.shopping,{id:id(),name:n,amount:$("amount").value.trim(),checked:false});$("manual").value=$("amount").value="";shopping=await all(S.shopping);renderShopping()}
 async function renderStock(){ $("stock").innerHTML="";stock.forEach(x=>{let li=document.createElement("li");li.style="list-style:none;display:flex;justify-content:space-between;background:#fff;padding:10px;margin-bottom:5px;border-radius:8px";li.innerHTML=`<span>${esc(x.name)}</span><button style="color:red;background:none">×</button>`;li.querySelector("button").onclick=async()=>{await del(S.stock,x.id);stock=stock.filter(y=>y.id!=x.id);renderStock()};$("stock").appendChild(li)})}
 async function addStock(){let n=$("stockInput").value.trim();if(!n)return;await put(S.stock,{id:id(),name:n});$("stockInput").value="";stock=await all(S.stock);renderStock()}
-async function exportData(){let d={version:2,exportDate:new Date().toISOString(),recipes:(await all(S.recipes)).map(({imageBlob,...r})=>r),shopping:await all(S.shopping),stock:await all(S.stock),groups};let b=new Blob([JSON.stringify(d)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="my_kitchen_backup_"+new Date().toISOString().slice(0,10)+".json";a.click();toast("書き出しました（画像除外）")}
-async function importData(f){
-  if(!f)return;
-  try{
-    const d=JSON.parse(await f.text());
-    const rs=Array.isArray(d)?d:(Array.isArray(d.recipes)?d.recipes:[]);
-    if(!rs.length)throw new Error("レシピデータがありません");
-    if(!confirm("バックアップのレシピ・買い物リスト・在庫を復元します。現在のデータは置き換わります。"))return;
-
-    // Clear current data first, then restore the complete old-format structure.
-    await clear(S.recipes);
-    await clear(S.shopping);
-    await clear(S.stock);
-
-    const now=Date.now();
-    for(const src of rs){
-      const r={
-        id:src.id||id(),
-        title:src.title||"",
-        group:src.group||"未分類",
-        sourceUrl:src.sourceUrl||"",
-        ingredients:Array.isArray(src.ingredients)?src.ingredients:[],
-        steps:Array.isArray(src.steps)?src.steps:[],
-        favorite:!!src.favorite,
-        cookCount:Number(src.cookCount)||0,
-        lastCookedDate:src.lastCookedDate||null,
-        createdAt:src.createdAt||now,
-        updatedAt:now,
-        imageBlob:null
-      };
-
-      // Original backup stores images as data:image/...;base64,...
-      // Convert them back to a binary Blob for IndexedDB.
-      if(typeof src.image==="string" && src.image.startsWith("data:image/")){
-        try{
-          r.imageBlob=await (await fetch(src.image)).blob();
-        }catch(imgErr){
-          console.warn("画像の復元に失敗:",src.title,imgErr);
-        }
-      }else if(src.imageBlob instanceof Blob){
-        r.imageBlob=src.imageBlob;
-      }
-
-      await put(S.recipes,r);
-    }
-
-    for(const x of (Array.isArray(d.shopping)?d.shopping:[])){
-      await put(S.shopping,{
-        id:x.id||id(),
-        name:x.name||"",
-        amount:x.amount||"",
-        checked:!!x.checked
-      });
-    }
-
-    for(const x of (Array.isArray(d.stock)?d.stock:[])){
-      await put(S.stock,{
-        id:x.id||id(),
-        name:typeof x==="string"?x:(x.name||"")
-      });
-    }
-
-    // Old backup uses groupOrder; the IndexedDB app uses settings.main.groups.
-    groups=Array.isArray(d.groupOrder)?d.groupOrder:[];
-    const recipeGroups=[...new Set(rs.map(r=>r.group||"未分類"))];
-    for(const g of recipeGroups)if(!groups.includes(g))groups.push(g);
-    await put(S.settings,{key:"main",groups});
-
-    await load();
-    alert("旧バックアップを完全復元しました。レシピ"+rs.length+"件・画像も復元しました。");
-  }catch(e){
-    console.error(e);
-    alert("読み込みに失敗しました: "+(e.message||e));
-  }
-}
-async function migrate(){let rr=localStorage.getItem("recipes"),ss=localStorage.getItem("shopping"),st=localStorage.getItem("stockItems"),gg=localStorage.getItem("groupOrder");if(!rr&&!ss&&!st&&!gg)return alert("旧データがありません");if(!confirm("旧localStorageからIndexedDBへ移行します。元データは残します。"))return;let R=JSON.parse(rr||"[]"),S2=JSON.parse(ss||"[]"),ST=JSON.parse(st||"[]");for(let x of R){let r={...x,id:id(),imageBlob:null,createdAt:Date.now(),updatedAt:Date.now()};if(x.image&&String(x.image).startsWith("data:image/"))try{r.imageBlob=await (await fetch(x.image)).blob()}catch(e){}delete r.image;await put("recipes",r)}for(let x of S2)await put("shopping",{id:id(),name:x.name||"",amount:x.amount||"",checked:!!x.checked});for(let x of ST)await put("stock",{id:id(),name:typeof x=="string"?x:x.name||""});groups=JSON.parse(gg||"[]");await put("settings",{key:"main",groups});await load();alert(`移行完了：レシピ${R.length}件`)}
-$("search").oninput=()=>renderList();$("clear").onclick=()=>{$("search").value="";renderList()};$("all").onclick=()=>{filter="all";$("all").classList.add("active");$("fav").classList.remove("active");renderList()};$("fav").onclick=()=>{filter="fav";$("fav").classList.add("active");$("all").classList.remove("active");renderList()};$("sort").onchange=renderList;
-$("tab-list").onclick=()=>show("list");$("tab-add").onclick=()=>{reset();show("add")};$("tab-shopping").onclick=()=>show("shopping");$("tab-stock").onclick=()=>show("stock");$("clearForm").onclick=reset;$("addGroup").onclick=addGroup;$("addStep").onclick=addStep;$("save").onclick=saveRecipe;$("cancel").onclick=()=>{reset();show("list")};$("addManual").onclick=addManual;$("clearShop").onclick=async()=>{if(confirm("リストをクリアしますか？")){await clear("shopping");shopping=[];renderShopping()}};$("addStock").onclick=addStock;$("export").onclick=exportData;$("import").onchange=e=>importData(e.target.files[0]);$("migrate").onclick=migrate;$("image").onchange=e=>{pending=e.target.files[0]||null;if(pending)$("imageBox").classList.add("hidden")};$("removeImage").onclick=()=>{removeImg=true;pending=null;$("image").value="";$("imageBox").classList.add("hidden")};
-let sx=0,sy=0;document.addEventListener("touchstart",e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});document.addEventListener("touchend",e=>{let dx=sx-e.changedTouches[0].clientX,dy=sy-e.changedTouches[0].clientY;if(page=="detail"||Math.abs(dx)<50||Math.abs(dx)<Math.abs(dy))return;let i=["list","add","shopping","stock"].indexOf(page);show(["list","add","shopping","stock"][(i+(dx>0?1:-1)+4)%4])},{passive:true});
-(async()=>{try{await openDB();if(localStorage.getItem("recipes")||localStorage.getItem("shopping")||localStorage.getItem("stockItems")||localStorage.getItem("groupOrder"))await migrate();else await load();show("list")}catch(e){console.error(e);alert("IndexedDBを初期化できませんでした")}})();
-</script>
-
-<section id="fullBackupPanel" style="margin:24px 16px 110px;padding:16px;border:1px solid #dbe3ef;border-radius:14px;background:#fff">
-  <h3 style="margin:0 0 8px">画像付きバックアップ</h3>
-  <p style="margin:0 0 12px;font-size:13px;color:#667085">
-    レシピ本文・カテゴリ・買い物リスト・在庫に加えて、登録画像もZIPに保存します。
-  </p>
-  <div style="display:flex;gap:8px;flex-wrap:wrap">
-    <button type="button" onclick="backupWithImages()" style="padding:10px 14px;border:0;border-radius:10px;background:#1677ff;color:#fff;font-weight:700">
-      画像付きでバックアップ
-    </button>
-    <label style="padding:10px 14px;border-radius:10px;background:#eef4ff;color:#1677ff;font-weight:700;cursor:pointer">
-      画像付きバックアップを復元
-      <input type="file" accept=".zip,application/zip" style="display:none" onchange="if(this.files[0])restoreWithImages(this.files[0])">
-    </label>
-  </div>
-</section>
-
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<script>
-async function backupWithImages(){
-  try{
-    if(!window.JSZip) throw new Error("ZIPライブラリを読み込めませんでした");
-    const db=await backupOpenDB();
-    const recipes=await backupGetAll(db,"recipes");
-    const shopping=await backupGetAll(db,"shopping");
-    const stock=await backupGetAll(db,"stock");
-    const groupSetting=await backupSetting(db,"main");
-    const groupList=groupSetting?.groups || [];
-
-    const zip=new JSZip();
-    const meta=[];
-
-    for(const r of recipes){
-      const c={...r};
-      const imageBlob=c.imageBlob;
-      delete c.imageBlob;
-      meta.push(c);
-
-      if(imageBlob instanceof Blob){
-        const ext=(imageBlob.type||"image/jpeg").split("/")[1]||"jpg";
-        zip.file("images/"+r.id+"."+ext,imageBlob);
-      }
-    }
-
-    zip.file("recipes.json",JSON.stringify(meta,null,2));
-    zip.file("settings.json",JSON.stringify({
-      groupOrder:groupList,
-      shopping:shopping||[],
-      stock:stock||[],
-      formatVersion:3,
-      exportedAt:new Date().toISOString()
-    },null,2));
-
-    const blob=await zip.generateAsync({type:"blob",compression:"DEFLATE"});
-    const a=document.createElement("a");
-    a.href=URL.createObjectURL(blob);
-    a.download="my_kitchen_full_backup_"+new Date().toISOString().slice(0,10)+".zip";
-    a.click();
-    setTimeout(()=>URL.revokeObjectURL(a.href),1500);
-    toast("画像を含む完全バックアップを作成しました");
-  }catch(e){
-    console.error(e);
-    alert("画像付きバックアップに失敗しました: "+(e.message||e));
-  }
-}
 function backupOpenDB(){
   return new Promise((res,rej)=>{
     const q=indexedDB.open("RecipeAppDB");
@@ -234,17 +95,6 @@ function backupSetting(db,key){
     if(!db.objectStoreNames.contains("settings")) return res(null);
     const q=db.transaction("settings","readonly").objectStore("settings").get(key);
     q.onsuccess=()=>res(q.result ? (q.result.value??q.result) : null);
-    q.onerror=()=>rej(q.error);
-  });
-}
-function backupImage(db,id){
-  return new Promise((res,rej)=>{
-    if(!db.objectStoreNames.contains("images")) return res(null);
-    const q=db.transaction("images","readonly").objectStore("images").get(id);
-    q.onsuccess=()=>{
-      const v=q.result;
-      res(v ? (v.blob||v.image||(v instanceof Blob?v:null)) : null);
-    };
     q.onerror=()=>rej(q.error);
   });
 }
@@ -290,7 +140,7 @@ async function restoreWithImages(file){
     await backupPutSetting(db,"main",{groups:gs});
 
     await load();
-    alert("完全バックアップを復元しました。レシピ"+recipes.length+"件・画像も復元しました。");
+    alert("バックアップを復元しました。レシピ"+recipes.length+"件・画像も復元しました。");
   }catch(e){
     console.error(e);
     alert("復元に失敗しました: "+(e.message||e));
@@ -313,19 +163,6 @@ function backupPutOne(db,name,item){
     t.onerror=()=>rej(t.error);
   });
 }
-function backupPutMany(db,name,items){
-  return new Promise((res,rej)=>{
-    if(!db.objectStoreNames.contains(name)) return res();
-    const t=db.transaction(name,"readwrite"),s=t.objectStore(name);
-    items.forEach(x=>s.put(x)); t.oncomplete=res; t.onerror=()=>rej(t.error);
-  });
-}
-function backupReplace(db,name,items){
-  return new Promise((res,rej)=>{
-    const t=db.transaction(name,"readwrite"),s=t.objectStore(name);
-    s.clear(); items.forEach(x=>s.put(x)); t.oncomplete=res; t.onerror=()=>rej(t.error);
-  });
-}
 function backupPutSetting(db,key,value){
   return new Promise((res,rej)=>{
     const t=db.transaction("settings","readwrite");
@@ -333,12 +170,44 @@ function backupPutSetting(db,key,value){
     t.oncomplete=res; t.onerror=()=>rej(t.error);
   });
 }
-function backupPutImage(db,id,blob){
-  return new Promise((res,rej)=>{
-    const t=db.transaction("images","readwrite");
-    t.objectStore("images").put({id:id,blob:blob});
-    t.oncomplete=res; t.onerror=()=>rej(t.error);
-  });
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+async function backupWithImages(){
+  try{
+    if(!window.JSZip) throw new Error("ZIPライブラリを読み込めませんでした");
+    const db=await backupOpenDB();
+    const recipes=await backupGetAll(db,"recipes");
+    const shopping=await backupGetAll(db,"shopping");
+    const stock=await backupGetAll(db,"stock");
+    const groupSetting=await backupSetting(db,"main");
+    const groupList=groupSetting?.groups || [];
+    const zip=new JSZip();
+    const meta=[];
+    for(const r of recipes){
+      const c={...r};
+      const imageBlob=c.imageBlob;
+      delete c.imageBlob;
+      meta.push(c);
+      if(imageBlob instanceof Blob){
+        const ext=(imageBlob.type||"image/jpeg").split("/")[1]||"jpg";
+        zip.file("images/"+r.id+"."+ext,imageBlob);
+      }
+    }
+    zip.file("recipes.json",JSON.stringify(meta,null,2));
+    zip.file("settings.json",JSON.stringify({groupOrder:groupList,shopping:shopping||[],stock:stock||[],formatVersion:3,exportedAt:new Date().toISOString()},null,2));
+    const blob=await zip.generateAsync({type:"blob",compression:"DEFLATE"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download="my_kitchen_backup_"+new Date().toISOString().slice(0,10)+".zip";
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+    toast("バックアップを作成しました");
+  }catch(e){
+    console.error(e);
+    alert("バックアップに失敗しました: "+(e.message||e));
+  }
 }
 </script>
 
