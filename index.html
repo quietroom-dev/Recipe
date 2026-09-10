@@ -188,7 +188,7 @@ async function backupWithImages(){
     const groupSetting=await backupSetting(db,"main");
     const groupList=groupSetting?.groups || [];
 
-    const zip=new JSZip();
+    const zip=new ZipLib();
     const meta=[];
 
     for(const r of recipes){
@@ -263,8 +263,8 @@ async function restoreWithImages(file){
 
     // New backup: ZIP containing recipes.json, settings.json and images/.
     if(name.endsWith(".zip")){
-      if(!window.JSZip)throw new Error("バックアップ機能を初期化できませんでした");
-      const zip=await JSZip.loadAsync(file);
+      const ZipLib=(typeof JSZip!=="undefined")?JSZip:null;if(!ZipLib)throw new Error("ZIPライブラリを読み込めませんでした");
+      const zip=await ZipLib.loadAsync(file);
       const recipesEntry=zip.file("recipes.json");
       if(!recipesEntry)throw new Error("このバックアップに recipes.json がありません");
 
