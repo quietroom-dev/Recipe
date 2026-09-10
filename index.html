@@ -201,7 +201,7 @@ async function backupWithImages(){
     const rs=await all(S.recipes);
     const sh=await all(S.shopping);
     const st=await all(S.stock);
-    const setting=await get(S.settings,"main");
+    const setting=await request(store(S.settings).get("main"));
     const groups=setting&&Array.isArray(setting.groups)?setting.groups:[];
 
     if(!rs.length){
@@ -307,7 +307,7 @@ async function restoreWithImages(file){
 
       const groups=Array.isArray(settings.groupOrder)?settings.groupOrder:
                    (Array.isArray(settings.groups)?settings.groups:[]);
-      await backupPutSetting(db,"main",{groups});
+      await put(S.settings,{key:"main",groups});
 
       await load();
       alert("復元しました。\nレシピ "+rs.length+"件\n画像 "+imageCount+"件");
@@ -362,7 +362,7 @@ async function restoreWithImages(file){
 
       const groups=Array.isArray(d.groupOrder)?d.groupOrder:
                    (Array.isArray(d.groups)?d.groups:[]);
-      await backupPutSetting(db,"main",{groups});
+      await put(S.settings,{key:"main",groups});
 
       await load();
       alert("旧バックアップを復元しました。\nレシピ "+rs.length+"件\n画像 "+imageCount+"件");
