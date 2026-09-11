@@ -57,6 +57,52 @@ button{min-height:44px;padding:10px 14px;border:0;border-radius:10px;font-family
   position:static!important;
 }
 </style>
+
+<style>
+/* 詳細画面：お気に入り */
+.detail-top-actions{display:flex;gap:10px;margin-top:8px}
+.detail-top-actions .cook-btn{flex:2;margin:0}
+.detail-favorite{flex:0 0 58px!important;margin:0!important;padding:0!important;font-size:26px!important;line-height:1}
+.detail-favorite.on{background:#ffcc00!important;color:#fff!important}
+.detail-favorite:not(.on){background:#eee!important;color:#888!important}
+
+/* 詳細画面：材料グループ */
+.ingredient-group{margin:14px 0;padding:10px;background:#fff;border-radius:10px}
+.ingredient-group-head{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  gap:10px!important;
+  margin-bottom:4px!important;
+}
+.ingredient-add-btn{
+  position:static!important;
+  float:none!important;
+  flex:0 0 auto!important;
+  width:auto!important;
+  margin:0!important;
+  padding:6px 9px!important;
+  background:var(--primary)!important;
+  color:#fff!important;
+  border-radius:8px!important;
+  font-size:11px!important;
+  line-height:1.2!important;
+}
+.ingredient-row{
+  display:grid!important;
+  grid-template-columns:24px minmax(0,1fr) minmax(80px,30%)!important;
+  gap:7px!important;
+  align-items:center!important;
+  width:100%!important;
+  box-sizing:border-box!important;
+  padding:7px 0!important;
+  border-bottom:1px solid #f2f2f7!important;
+}
+.ingredient-row:last-child{border-bottom:0!important}
+.ingredient-row input{margin:0!important}
+.ingredient-name{min-width:0!important;overflow-wrap:anywhere!important}
+.ingredient-amount{text-align:right!important;white-space:nowrap!important;color:var(--sub)!important}
+</style>
 </head>
 <body>
 <div class="container">
@@ -115,7 +161,105 @@ function show(p){page=p;["list","detail","add","shopping","stock"].forEach(x=>$(
 function renderList(){let box=$("list");box.innerHTML="";let k=kata($("search").value.toLowerCase()),type=$("sort").value,G={};recipes.forEach(r=>{let hit=kata((r.title||"").toLowerCase()).includes(k)||(r.ingredients||[]).some(g=>(g.items||[]).some(x=>kata((x.name||"").toLowerCase()).includes(k)));if(hit&&(filter=="all"||r.favorite)){let g=r.group||"未分類";(G[g]??=[]).push(r)}});groups.forEach(g=>{if(!G[g])return;if(open[g]===undefined)open[g]=false;let ex=k||open[g],h=document.createElement("div");h.className="group";h.innerHTML=`<b>${esc(g)} <small>${ex?"▼":"▶"}</small></b><span class=moves><button>↑</button><button>↓</button></span>`;h.querySelector("b").onclick=()=>{open[g]=!open[g];renderList()};h.querySelectorAll("button")[0].onclick=()=>moveGroup(g,-1);h.querySelectorAll("button")[1].onclick=()=>moveGroup(g,1);box.appendChild(h);if(!ex)return;let a=[...G[g]];if(type=="count")a.sort((x,y)=>(y.cookCount||0)-(x.cookCount||0));if(type=="date")a.sort((x,y)=>new Date(y.lastCookedDate||0)-new Date(x.lastCookedDate||0));a.forEach(r=>{let c=document.createElement("div");c.className="card";let u=r.imageBlob?URL.createObjectURL(r.imageBlob):"";c.innerHTML=`<div class="star ${r.favorite?"on":""}">★</div>${u?`<img src="${u}">`:`<div class=noimg>No Image</div>`}<div class=info><div class=title>${esc(r.title)}</div><div class=sub>${type=="date"?esc(r.lastCookedDate||"未"):"×"+(r.cookCount||0)}</div></div>`;c.querySelector(".star").onclick=e=>{e.stopPropagation();fav(r.id)};c.onclick=()=>detail(r.id);box.appendChild(c);if(u)c.querySelector("img").onload=()=>URL.revokeObjectURL(u)})})}
 async function moveGroup(g,d){let i=groups.indexOf(g),j=i+d;if(j<0||j>=groups.length)return;[groups[i],groups[j]]=[groups[j],groups[i]];await put(S.settings,{key:"main",groups});renderList()}
 async function fav(i){let r=recipes.find(x=>x.id==i);r.favorite=!r.favorite;r.updatedAt=Date.now();await put(S.recipes,r);renderList()}
-function detail(i){let r=recipes.find(x=>x.id==i);show("detail");let d=$("detailPage");d.innerHTML=`<h1>${esc(r.title)}</h1><div style="display:flex;gap:10px"><button id=cook class=main style="flex:2;background:#34c759;margin:0">🍳 今日作った</button><button id=dfav class=main style="flex:1;background:${r.favorite?"#fc0":"#eee"};color:${r.favorite?"#fff":"#888"}>★</button></div>`;if(r.imageBlob){let im=document.createElement("img");im.className="detail-img";im.style="width:100%;border-radius:16px;margin-top:16px";im.src=URL.createObjectURL(r.imageBlob);d.appendChild(im)}if(r.sourceUrl){let a=document.createElement("a");a.href=r.sourceUrl;a.target="_blank";a.rel="noopener";a.textContent="レシピ元を開く";a.style="display:block;text-align:center;margin:15px";d.appendChild(a)}let h=document.createElement("h3");h.textContent="材料";d.appendChild(h);(r.ingredients||[]).forEach((g,gi)=>{let b=document.createElement("div");b.className="ingredient";b.innerHTML=`<b>${esc(g.name)}</b> <button style="float:right;background:var(--primary);color:#fff;font-size:11px">この組を追加</button>`;b.querySelector("button").onclick=()=>addGroupShop(g);g.items.forEach(x=>{let l=document.createElement("label");l.style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid #f2f2f7";l.innerHTML=`<input type=checkbox><span>${esc(x.name)}</span><span style="margin-left:auto;color:var(--sub)">${esc(x.amount)}</span>`;l.querySelector("input").dataset.name=x.name;l.querySelector("input").dataset.amount=x.amount;b.appendChild(l)});d.appendChild(b)});let sb=document.createElement("button");sb.className="outline";sb.textContent="選択した材料を買い物リストへ";sb.onclick=async()=>{for(let c of d.querySelectorAll(".ingredient input:checked"))await put(S.shopping,{id:id(),name:c.dataset.name,amount:c.dataset.amount,checked:false});shopping=await all(S.shopping);toast("追加しました")};d.appendChild(sb);let sh=document.createElement("h3");sh.textContent="作り方";d.appendChild(sh);(r.steps||[]).forEach((s,n)=>{let x=document.createElement("div");x.className="step";x.innerHTML=`<b>${n+1}</b><span>${esc(String(s).replace(/^\d+\.\s*/,""))}</span>`;x.onclick=()=>x.classList.toggle("done");d.appendChild(x)});let f=document.createElement("div");f.style="display:flex;gap:10px;margin-top:30px";f.innerHTML="<button class=outline>編集</button><button class='danger' style='flex:1'>削除</button>";f.children[0].onclick=()=>edit(i);f.children[1].onclick=()=>delRecipe(i);d.appendChild(f);$("cook").onclick=()=>cook(i);$("dfav").onclick=async()=>{await fav(i);detail(i)}}
+function detail(i){
+  let r=recipes.find(x=>x.id==i);
+  if(!r)return;
+  show("detail");
+  let d=$("detailPage");
+  d.innerHTML=`<h1>${esc(r.title)}</h1>
+    <div class="detail-top-actions">
+      <button id="cook" class="main cook-btn">🍳 今日作った</button>
+      <button id="dfav" class="main detail-favorite ${r.favorite?"on":""}" aria-label="お気に入り" aria-pressed="${r.favorite?"true":"false"}">${r.favorite?"★":"☆"}</button>
+    </div>`;
+
+  if(r.imageBlob){
+    let im=document.createElement("img");
+    im.className="detail-img";
+    im.style="width:100%;border-radius:16px;margin-top:16px";
+    im.src=URL.createObjectURL(r.imageBlob);
+    d.appendChild(im);
+  }
+
+  if(r.sourceUrl){
+    let a=document.createElement("a");
+    a.href=r.sourceUrl;
+    a.target="_blank";
+    a.rel="noopener";
+    a.textContent="レシピ元を開く";
+    a.style="display:block;text-align:center;margin:15px";
+    d.appendChild(a);
+  }
+
+  let h=document.createElement("h3");
+  h.textContent="材料";
+  d.appendChild(h);
+
+  (r.ingredients||[]).forEach((g,gi)=>{
+    let b=document.createElement("div");
+    b.className="ingredient ingredient-group";
+
+    let head=document.createElement("div");
+    head.className="ingredient-group-head";
+    let name=document.createElement("b");
+    name.textContent=g.name||"";
+    let add=document.createElement("button");
+    add.type="button";
+    add.className="ingredient-add-btn";
+    add.textContent="この組を追加";
+    add.onclick=()=>addGroupShop(g);
+    head.appendChild(name);
+    head.appendChild(add);
+    b.appendChild(head);
+
+    (g.items||[]).forEach(x=>{
+      let l=document.createElement("label");
+      l.className="ingredient-row";
+      l.innerHTML=`<input type="checkbox"><span class="ingredient-name">${esc(x.name||"")}</span><span class="ingredient-amount">${esc(x.amount||"")}</span>`;
+      l.querySelector("input").dataset.name=x.name||"";
+      l.querySelector("input").dataset.amount=x.amount||"";
+      b.appendChild(l);
+    });
+
+    d.appendChild(b);
+  });
+
+  let sb=document.createElement("button");
+  sb.className="outline";
+  sb.textContent="選択した材料を買い物リストへ";
+  sb.onclick=async()=>{
+    for(let c of d.querySelectorAll(".ingredient input:checked")){
+      await put(S.shopping,{id:id(),name:c.dataset.name,amount:c.dataset.amount,checked:false});
+    }
+    shopping=await all(S.shopping);
+    toast("追加しました");
+  };
+  d.appendChild(sb);
+
+  let sh=document.createElement("h3");
+  sh.textContent="作り方";
+  d.appendChild(sh);
+
+  (r.steps||[]).forEach((s,n)=>{
+    let x=document.createElement("div");
+    x.className="step";
+    x.innerHTML=`<b>${n+1}</b><span>${esc(String(s).replace(/^\d+\.\s*/,""))}</span>`;
+    x.onclick=()=>x.classList.toggle("done");
+    d.appendChild(x);
+  });
+
+  let f=document.createElement("div");
+  f.style="display:flex;gap:10px;margin-top:30px";
+  f.innerHTML="<button class=outline>編集</button><button class='danger' style='flex:1'>削除</button>";
+  f.children[0].onclick=()=>edit(i);
+  f.children[1].onclick=()=>delRecipe(i);
+  d.appendChild(f);
+
+  $("cook").onclick=()=>cook(i);
+  $("dfav").onclick=async()=>{
+    await fav(i);
+    detail(i);
+  };
+}
 async function addGroupShop(g){for(let x of g.items)await put(S.shopping,{id:id(),name:x.name,amount:x.amount,checked:false});shopping=await all(S.shopping);toast("グループを追加しました")}
 async function cook(i){let r=recipes.find(x=>x.id==i),d=new Date();r.cookCount=(r.cookCount||0)+1;r.lastCookedDate=`${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;await put(S.recipes,r);detail(i);toast("調理を記録しました！")}
 async function delRecipe(i){if(!confirm("消去しますか？"))return;await del(S.recipes,i);recipes=recipes.filter(x=>x.id!=i);show("list");toast("削除しました")}
