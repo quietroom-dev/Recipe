@@ -260,125 +260,79 @@ async function backupWithImages(){
 }
 
 async function restoreWithImages(file){
-  if(!file)return;
+  const input=document.getElementById("importZip");
   try{
-    const name=(file.name||"").toLowerCase();
+    if(!db) await openDB();
+    const isZip=(file.name||"").toLowerCase().endsWith(".zip") || file.type==="application/zip";
 
-    if(name.endsWith(".zip")){
+    if(isZip){
       const ZipLib=(typeof JSZip!=="undefined")?JSZip:null;
-      if(!ZipLib)throw new Error("ZIPライブラリを利用できません");
-
+      if(!ZipLib) throw new Error("ZIPライブラリを利用できません");
       const zip=await ZipLib.loadAsync(file);
-      const recipeEntry=zip.file("recipes.json");
-      if(!recipeEntry)throw new Error("recipes.json が見つかりません");
+      if(!zip.files["recipes.json"]) throw new Error("recipes.json が見つかりません");
 
-      const rs=JSON.parse(await recipeEntry.async("string"));
-      const se=zip.file("settings.json");
-      const settings=se?JSON.parse(await se.async("string")):{};
+      const recipes=JSON.parse(await zip.files["recipes.json"].async("text"));
+      const settings=zip.files["settings.json"] ? JSON.parse(await zip.files["settings.json"].async("text")) : {};
+      if(!Array.isArray(recipes)) throw new Error("レシピデータが不正です");
+      if(!confirm("現在のレシピ・買い物・在庫データをバックアップ内容で置き換えます。よろしいですか？")) return;
 
-      if(!Array.isArray(rs)||!rs.length)throw new Error("レシピデータがありません");
-      if(!confirm("バックアップを復元します。\n現在のデータは置き換わります。"))return;
-
-      const db=await backupOpenDB();
-      await clearStoreBackup(db,"recipes");
-      await clearStoreBackup(db,"shopping");
-      await clearStoreBackup(db,"stock");
-
+      await clear(S.recipes); await clear(S.shopping); await clear(S.stock);
       let imageCount=0;
-      for(const src of rs){
+      for(const src of recipes){
         const r={...src,id:src.id||id(),imageBlob:null};
-        const keys=Object.keys(zip.files);
-        const imageKey=keys.find(k=>k.startsWith("images/"+r.id+".")&&!zip.files[k].dir);
-
-        if(imageKey){
-          r.imageBlob=await zip.files[imageKey].async("blob");
-          imageCount++;
-        }
-        await backupPutOne(db,"recipes",r);
+        const prefix="images/"+r.id+".";
+        const imageKey=Object.keys(zip.files).find(k=>k.startsWith(prefix) && !zip.files[k].dir);
+        if(imageKey){ r.imageBlob=await zip.files[imageKey].async("blob"); imageCount++; }
+        await put(S.recipes,r);
       }
 
-      for(const x of (Array.isArray(settings.shopping)?settings.shopping:[]))
-        await backupPutOne(db,"shopping",{...x,id:x.id||id()});
-
-      for(const x of (Array.isArray(settings.stock)?settings.stock:[])){
-        const obj=typeof x==="string"?{name:x}:({...x});
-        await backupPutOne(db,"stock",{...obj,id:obj.id||id()});
-      }
-
-      const groups=Array.isArray(settings.groupOrder)?settings.groupOrder:
-                   (Array.isArray(settings.groups)?settings.groups:[]);
+      const shopping=Array.isArray(settings.shopping)?settings.shopping:[];
+      const stock=Array.isArray(settings.stock)?settings.stock:[];
+      const groups=Array.isArray(settings.groupOrder)?settings.groupOrder:[];
+      for(const x of shopping) await put(S.shopping,x);
+      for(const x of stock) await put(S.stock,x);
       await put(S.settings,{key:"main",groups});
-
       await load();
-      alert("復元しました。\nレシピ "+rs.length+"件\n画像 "+imageCount+"件");
-      $("importZip").value="";
+      alert("復元しました。\nレシピ: "+recipes.length+"件\n画像: "+imageCount+"件");
       return;
     }
 
-    if(name.endsWith(".json")){
-      const d=JSON.parse(await file.text());
-      const rs=Array.isArray(d)?d:(Array.isArray(d.recipes)?d.recipes:[]);
-      if(!rs.length)throw new Error("レシピデータがありません");
-      if(!confirm("旧バックアップを復元します。\n現在のデータは置き換わります。"))return;
+    const old=JSON.parse(await file.text());
+    if(!old || !Array.isArray(old.recipes)) throw new Error("JSONバックアップの形式が不正です");
+    if(!confirm("現在のレシピ・買い物・在庫データをJSONバックアップ内容で置き換えます。よろしいですか？")) return;
 
-      const db=await backupOpenDB();
-      await clearStoreBackup(db,"recipes");
-      await clearStoreBackup(db,"shopping");
-      await clearStoreBackup(db,"stock");
-
-      let imageCount=0;
-      for(const src of rs){
-        const r={
-          id:src.id||id(),
-          title:src.title||"",
-          group:src.group||"未分類",
-          sourceUrl:src.sourceUrl||"",
-          ingredients:Array.isArray(src.ingredients)?src.ingredients:[],
-          steps:Array.isArray(src.steps)?src.steps:[],
-          favorite:!!src.favorite,
-          cookCount:Number(src.cookCount)||0,
-          lastCookedDate:src.lastCookedDate||null,
-          createdAt:src.createdAt||Date.now(),
-          updatedAt:Date.now(),
-          imageBlob:null
-        };
-
-        if(typeof src.image==="string"&&src.image.startsWith("data:image/")){
-          try{
-            r.imageBlob=await (await fetch(src.image)).blob();
-            imageCount++;
-          }catch(e){console.warn("image restore failed",src.title,e);}
-        }
-        await backupPutOne(db,"recipes",r);
+    await clear(S.recipes); await clear(S.shopping); await clear(S.stock);
+    let imageCount=0;
+    for(const src of old.recipes){
+      const r={
+        id:src.id||id(), title:src.title||"", group:src.group||"", sourceUrl:src.sourceUrl||"",
+        imageBlob:null, ingredients:Array.isArray(src.ingredients)?src.ingredients:[],
+        steps:Array.isArray(src.steps)?src.steps:[], favorite:!!src.favorite,
+        cookCount:Number(src.cookCount)||0, lastCookedDate:src.lastCookedDate||"",
+        createdAt:src.createdAt||Date.now(), updatedAt:src.updatedAt||Date.now()
+      };
+      if(typeof src.image==="string" && src.image.startsWith("data:")){
+        try{ r.imageBlob=await (await fetch(src.image)).blob(); imageCount++; }catch(_){}
       }
-
-      for(const x of (Array.isArray(d.shopping)?d.shopping:[]))
-        await backupPutOne(db,"shopping",{...x,id:x.id||id()});
-
-      for(const x of (Array.isArray(d.stock)?d.stock:[])){
-        const obj=typeof x==="string"?{name:x}:({...x});
-        await backupPutOne(db,"stock",{...obj,id:obj.id||id()});
-      }
-
-      const groups=Array.isArray(d.groupOrder)?d.groupOrder:
-                   (Array.isArray(d.groups)?d.groups:[]);
-      await put(S.settings,{key:"main",groups});
-
-      await load();
-      alert("旧バックアップを復元しました。\nレシピ "+rs.length+"件\n画像 "+imageCount+"件");
-      $("importZip").value="";
-      return;
+      await put(S.recipes,r);
     }
-
-    throw new Error("ZIPまたはJSONのバックアップファイルを選択してください");
+    const shopping=Array.isArray(old.shopping)?old.shopping:[];
+    const stock=Array.isArray(old.stock)?old.stock:[];
+    const groups=Array.isArray(old.groupOrder)?old.groupOrder:[];
+    for(const x of shopping) await put(S.shopping,x);
+    for(const x of stock) await put(S.stock,x);
+    await put(S.settings,{key:"main",groups});
+    await load();
+    alert("復元しました。\nレシピ: "+old.recipes.length+"件\n画像: "+imageCount+"件");
   }catch(e){
-    console.error("restoreWithImages:",e);
-    alert("復元に失敗しました。\n"+(e.message||e));
-    if($("importZip"))$("importZip").value="";
+    console.error(e);
+    alert("復元に失敗しました。\n"+(e&&e.message?e.message:e));
+  }finally{
+    if(input) input.value="";
   }
 }
 
-function clearStoreBackup(db,name){
+function unusedBackupHelper(db,name){
   return new Promise((res,rej)=>{
     if(!db.objectStoreNames.contains(name))return res();
     const t=db.transaction(name,"readwrite");
@@ -387,7 +341,7 @@ function clearStoreBackup(db,name){
     t.onerror=()=>rej(t.error);
   });
 }
-function backupPutOne(db,name,item){
+function unusedBackupHelper(db,name,item){
   return new Promise((res,rej)=>{
     const t=db.transaction(name,"readwrite");
     t.objectStore(name).put(item);
@@ -408,7 +362,7 @@ function backupReplace(db,name,items){
     s.clear(); items.forEach(x=>s.put(x)); t.oncomplete=res; t.onerror=()=>rej(t.error);
   });
 }
-function backupPutSetting(db,key,value){
+function unusedBackupHelper(db,key,value){
   return new Promise((res,rej)=>{
     const t=db.transaction("settings","readwrite");
     t.objectStore("settings").put({key:key,value:value});
