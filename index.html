@@ -106,7 +106,7 @@ button{min-height:44px;padding:10px 14px;border:0;border-radius:10px;font-family
 </head>
 <body>
 <div class="container">
-<section id="listPage"><div style="font-size:10px;color:var(--sub);text-align:right">v2.02 IndexedDB</div>
+<section id="listPage"><div style="font-size:10px;color:var(--sub);text-align:right">v2.01 IndexedDB</div>
 <div class="search"><input id="search" placeholder="材料や料理名で検索..."><span id="clear" class="clear">×</span></div>
 <div class="filters"><button id="all" class="filter active">すべて</button><button id="fav" class="filter">お気に入り</button><select id="sort" class="sort"><option value="reg">登録順</option><option value="count">調理回数</option><option value="date">最終調理日</option></select></div>
 <div id="list" class="grid"></div></section>
@@ -170,7 +170,7 @@ function detail(i){
   d.innerHTML=`<h1>${esc(r.title)}</h1>
     <div class="detail-top-actions">
       <button id="cook" class="main cook-btn">🍳 今日作った</button>
-      <button id="dfav" class="main detail-favorite ${r.favorite?"on":""}" aria-label="お気に入り" aria-pressed="${r.favorite?"true":"false"}">${r.favorite?"★":"☆"}</button>
+      <button type="button" id="dfav" class="main detail-favorite ${r.favorite?"on":""}" aria-label="お気に入り" aria-pressed="${r.favorite?"true":"false"}">${r.favorite?"★":"☆"}</button>
     </div>`;
 
   if(r.imageBlob){
@@ -274,9 +274,7 @@ async function toggleDetailFavorite(){
   currentRecipe=r;
   updateDetailFavoriteButton();
 
-  // 一覧側の★表示・お気に入りフィルターも同期するが、
-  // 詳細画面は再生成しない。
-  renderList();
+  // 詳細画面は再生成しない。画像・画像URL・詳細DOMには触れない。
 }
 function updateDetailFavoriteButton(){
   const b=$("dfav");
