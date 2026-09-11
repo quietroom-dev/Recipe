@@ -106,7 +106,7 @@ button{min-height:44px;padding:10px 14px;border:0;border-radius:10px;font-family
 </head>
 <body>
 <div class="container">
-<section id="listPage"><div style="font-size:10px;color:var(--sub);text-align:right">v2.01 IndexedDB</div>
+<section id="listPage"><div style="font-size:10px;color:var(--sub);text-align:right">v2.02 IndexedDB</div>
 <div class="search"><input id="search" placeholder="材料や料理名で検索..."><span id="clear" class="clear">×</span></div>
 <div class="filters"><button id="all" class="filter active">すべて</button><button id="fav" class="filter">お気に入り</button><select id="sort" class="sort"><option value="reg">登録順</option><option value="count">調理回数</option><option value="date">最終調理日</option></select></div>
 <div id="list" class="grid"></div></section>
@@ -158,9 +158,29 @@ const all=n=>request(store(n).getAll()),put=(n,x)=>request(store(n,"readwrite").
 function toast(x){let t=$("toast");t.textContent=x;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2000)}
 async function load(){recipes=await all(S.recipes);shopping=await all(S.shopping);stock=await all(S.stock);let g=await request(store(S.settings).get("main"));groups=g?.groups||[];recipes.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));let changed=false;recipes.forEach(r=>{let g=r.group||"未分類";if(!groups.includes(g)){groups.push(g);changed=true}});if(changed)await put(S.settings,{key:"main",groups});renderList();renderShopping();renderStock()}
 function show(p){page=p;["list","detail","add","shopping","stock"].forEach(x=>$(x+"Page").classList.add("hidden"));$(p+"Page").classList.remove("hidden");document.querySelectorAll(".tabs button").forEach(x=>x.classList.remove("active"));$("tab-"+p)?.classList.add("active");if(p=="list")renderList();if(p=="shopping")renderShopping();if(p=="stock")renderStock();scrollTo(0,0)}
-function renderList(){let box=$("list");box.innerHTML="";let k=kata($("search").value.toLowerCase()),type=$("sort").value,G={};recipes.forEach(r=>{let hit=kata((r.title||"").toLowerCase()).includes(k)||(r.ingredients||[]).some(g=>(g.items||[]).some(x=>kata((x.name||"").toLowerCase()).includes(k)));if(hit&&(filter=="all"||r.favorite)){let g=r.group||"未分類";(G[g]??=[]).push(r)}});groups.forEach(g=>{if(!G[g])return;if(open[g]===undefined)open[g]=false;let ex=k||open[g],h=document.createElement("div");h.className="group";h.innerHTML=`<b>${esc(g)} <small>${ex?"▼":"▶"}</small></b><span class=moves><button>↑</button><button>↓</button></span>`;h.querySelector("b").onclick=()=>{open[g]=!open[g];renderList()};h.querySelectorAll("button")[0].onclick=()=>moveGroup(g,-1);h.querySelectorAll("button")[1].onclick=()=>moveGroup(g,1);box.appendChild(h);if(!ex)return;let a=[...G[g]];if(type=="count")a.sort((x,y)=>(y.cookCount||0)-(x.cookCount||0));if(type=="date")a.sort((x,y)=>new Date(y.lastCookedDate||0)-new Date(x.lastCookedDate||0));a.forEach(r=>{let c=document.createElement("div");c.className="card";let u=r.imageBlob?URL.createObjectURL(r.imageBlob):"";c.innerHTML=`<div class="star ${r.favorite?"on":""}">★</div>${u?`<img src="${u}">`:`<div class=noimg>No Image</div>`}<div class=info><div class=title>${esc(r.title)}</div><div class=sub>${type=="date"?esc(r.lastCookedDate||"未"):"×"+(r.cookCount||0)}</div></div>`;c.querySelector(".star").onclick=e=>{e.stopPropagation();fav(r.id)};c.onclick=()=>detail(r.id);box.appendChild(c);if(u)c.querySelector("img").onload=()=>URL.revokeObjectURL(u)})})}
+function renderList(){let box=$("list");box.innerHTML="";let k=kata($("search").value.toLowerCase()),type=$("sort").value,G={};recipes.forEach(r=>{let hit=kata((r.title||"").toLowerCase()).includes(k)||(r.ingredients||[]).some(g=>(g.items||[]).some(x=>kata((x.name||"").toLowerCase()).includes(k)));if(hit&&(filter=="all"||r.favorite)){let g=r.group||"未分類";(G[g]??=[]).push(r)}});groups.forEach(g=>{if(!G[g])return;if(open[g]===undefined)open[g]=false;let ex=k||open[g],h=document.createElement("div");h.className="group";h.innerHTML=`<b>${esc(g)} <small>${ex?"▼":"▶"}</small></b><span class=moves><button>↑</button><button>↓</button></span>`;h.querySelector("b").onclick=()=>{open[g]=!open[g];renderList()};h.querySelectorAll("button")[0].onclick=()=>moveGroup(g,-1);h.querySelectorAll("button")[1].onclick=()=>moveGroup(g,1);box.appendChild(h);if(!ex)return;let a=[...G[g]];if(type=="count")a.sort((x,y)=>(y.cookCount||0)-(x.cookCount||0));if(type=="date")a.sort((x,y)=>new Date(y.lastCookedDate||0)-new Date(x.lastCookedDate||0));a.forEach(r=>{let c=document.createElement("div");c.className="card";let u=r.imageBlob?URL.createObjectURL(r.imageBlob):"";c.innerHTML=`<div class="star ${r.favorite?"on":""}" data-recipe-id="${esc(String(r.id))}" aria-label="お気に入り" aria-pressed="${r.favorite?"true":"false"}">${r.favorite?"★":"☆"}</div>${u?`<img src="${u}">`:`<div class=noimg>No Image</div>`}<div class=info><div class=title>${esc(r.title)}</div><div class=sub>${type=="date"?esc(r.lastCookedDate||"未"):"×"+(r.cookCount||0)}</div></div>`;c.querySelector(".star").onclick=e=>{e.stopPropagation();fav(r.id)};c.onclick=()=>detail(r.id);box.appendChild(c);if(u)c.querySelector("img").onload=()=>URL.revokeObjectURL(u)})})}
 async function moveGroup(g,d){let i=groups.indexOf(g),j=i+d;if(j<0||j>=groups.length)return;[groups[i],groups[j]]=[groups[j],groups[i]];await put(S.settings,{key:"main",groups});renderList()}
-async function fav(i){let r=recipes.find(x=>x.id==i);r.favorite=!r.favorite;r.updatedAt=Date.now();await put(S.recipes,r);renderList()}
+const favoriteBusy=new Set();
+async function fav(i){
+  if(favoriteBusy.has(i))return;
+  const r=recipes.find(x=>x.id==i);
+  if(!r)return;
+  favoriteBusy.add(i);
+  try{
+    r.favorite=!r.favorite;
+    r.updatedAt=Date.now();
+    await put(S.recipes,r);
+    const star=document.querySelector(`.card .star[data-recipe-id="${CSS.escape(String(i))}"]`);
+    if(star){
+      star.textContent=r.favorite?"★":"☆";
+      star.classList.toggle("on",!!r.favorite);
+      star.setAttribute("aria-pressed",r.favorite?"true":"false");
+    }
+    if(filter==="fav" && !r.favorite)renderList();
+  }finally{
+    favoriteBusy.delete(i);
+  }
+}
 function detail(i){
   let r=recipes.find(x=>x.id==i);
   if(!r)return;
