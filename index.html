@@ -20,10 +20,47 @@ button{min-height:44px;padding:10px 14px;border:0;border-radius:10px;font-family
 .tabs{position:fixed;bottom:0;left:0;width:100%;height:90px;padding-bottom:env(safe-area-inset-bottom);display:flex;background:#fffffff0;backdrop-filter:blur(10px);border-top:1px solid #d1d1d6;z-index:10}.tabs button{flex:1;background:none;color:var(--sub);font-size:10px}.tabs button.active{color:var(--primary)}.ico{font-size:20px;display:block}
 #toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:24px;background:#000c;color:#fff;opacity:0;transition:.25s;z-index:99}#toast.show{opacity:1}
 </style>
+
+<style>
+.detail-actions{display:flex;justify-content:flex-end;align-items:center;margin:4px 0 8px}
+.favorite-btn{width:44px;height:44px;border:1px solid #d1d1d6;border-radius:10px;background:#fff;font-size:26px;line-height:1;cursor:pointer}
+.favorite-btn.active{background:#fff3b0}
+.ingredient-group{margin-bottom:16px}
+.ingredient-group-actions{display:flex;justify-content:flex-end;margin-top:8px}
+.ingredient-add-btn{position:static!important;float:none!important;width:auto!important;max-width:100%;margin:0!important}
+.ingredient-row{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(90px,32%);gap:12px;align-items:center}
+.ingredient-amount{text-align:right;white-space:nowrap}
+</style>
+
+<style>
+/* 材料：分量と「この組を追加」が干渉しないようにする */
+.ingredient-row,.ingredient-item{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) minmax(90px,32%);
+  gap:12px;
+  align-items:center;
+  position:relative!important;
+}
+.ingredient-row .ingredient-amount,.ingredient-item .ingredient-amount{
+  text-align:right;
+  white-space:nowrap;
+}
+.ingredient-row .ingredient-add-btn,.ingredient-item .ingredient-add-btn{
+  position:static!important;
+  float:none!important;
+  clear:both!important;
+}
+.ingredient-group-actions{
+  display:flex!important;
+  justify-content:flex-end!important;
+  margin-top:8px!important;
+  position:static!important;
+}
+</style>
 </head>
 <body>
 <div class="container">
-<section id="listPage"><div style="font-size:10px;color:var(--sub);text-align:right">v2.01 IndexedDB</div>
+<section id="listPage"><div style="font-size:10px;color:var(--sub);text-align:right">v2.00 IndexedDB</div>
 <div class="search"><input id="search" placeholder="材料や料理名で検索..."><span id="clear" class="clear">×</span></div>
 <div class="filters"><button id="all" class="filter active">すべて</button><button id="fav" class="filter">お気に入り</button><select id="sort" class="sort"><option value="reg">登録順</option><option value="count">調理回数</option><option value="date">最終調理日</option></select></div>
 <div id="list" class="grid"></div></section>
@@ -378,4 +415,22 @@ function backupPutImage(db,id,blob){
 }
 </script>
 
+
+<script>
+async function toggleDetailFavorite(){
+  if(!currentRecipe) return;
+  currentRecipe.favorite=!currentRecipe.favorite;
+  currentRecipe.updatedAt=Date.now();
+  await put(S.recipes,currentRecipe);
+  updateDetailFavoriteButton();
+  if(typeof renderRecipes==="function") await renderRecipes();
+}
+function updateDetailFavoriteButton(){
+  const b=document.getElementById("detailFavorite");
+  if(!b || !currentRecipe) return;
+  b.textContent=currentRecipe.favorite?"★":"☆";
+  b.classList.toggle("active",!!currentRecipe.favorite);
+  b.setAttribute("aria-pressed",currentRecipe.favorite?"true":"false");
+}
+</script>
 </body></html>
