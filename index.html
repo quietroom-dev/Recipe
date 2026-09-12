@@ -161,37 +161,39 @@ async function load(){recipes=await all(S.recipes);shopping=await all(S.shopping
 function show(p){page=p;["list","detail","add","shopping","stock"].forEach(x=>$(x+"Page").classList.add("hidden"));$(p+"Page").classList.remove("hidden");document.querySelectorAll(".tabs button").forEach(x=>x.classList.remove("active"));$("tab-"+p)?.classList.add("active");if(p=="list")renderList();if(p=="shopping")renderShopping();if(p=="stock")renderStock();scrollTo(0,0)}
 function renderList(){let box=$("list");box.innerHTML="";let k=kata($("search").value.toLowerCase()),type=$("sort").value,G={};recipes.forEach(r=>{let hit=kata((r.title||"").toLowerCase()).includes(k)||(r.ingredients||[]).some(g=>(g.items||[]).some(x=>kata((x.name||"").toLowerCase()).includes(k)));if(hit&&(filter=="all"||r.favorite)){let g=r.group||"未分類";(G[g]??=[]).push(r)}});groups.forEach(g=>{if(!G[g])return;if(open[g]===undefined)open[g]=false;let ex=k||open[g],h=document.createElement("div");h.className="group";h.innerHTML=`<b>${esc(g)} <small>${ex?"▼":"▶"}</small></b><span class=moves><button>↑</button><button>↓</button></span>`;h.querySelector("b").onclick=()=>{open[g]=!open[g];renderList()};h.querySelectorAll("button")[0].onclick=()=>moveGroup(g,-1);h.querySelectorAll("button")[1].onclick=()=>moveGroup(g,1);box.appendChild(h);if(!ex)return;let a=[...G[g]];if(type=="count")a.sort((x,y)=>(y.cookCount||0)-(x.cookCount||0));if(type=="date")a.sort((x,y)=>new Date(y.lastCookedDate||0)-new Date(x.lastCookedDate||0));a.forEach(r=>{let c=document.createElement("div");c.className="card";let u=imageUrl(r);c.innerHTML=`<div class="star ${r.favorite?"on":""}" data-recipe-id="${esc(String(r.id))}" aria-label="お気に入り" aria-pressed="${r.favorite?"true":"false"}">${r.favorite?"★":"☆"}</div>${u?`<img src="${u}">`:`<div class=noimg>No Image</div>`}<div class=info><div class=title>${esc(r.title)}</div><div class=sub>${type=="date"?esc(r.lastCookedDate||"未"):"×"+(r.cookCount||0)}</div></div>`;c.querySelector(".star").onclick=e=>{e.stopPropagation();fav(r.id)};c.onclick=()=>detail(r.id);box.appendChild(c)})})}
 async function moveGroup(g,d){let i=groups.indexOf(g),j=i+d;if(j<0||j>=groups.length)return;[groups[i],groups[j]]=[groups[j],groups[i]];await put(S.settings,{key:"main",groups});renderList()}
-const favoriteBusy=new Set();
+const favoriteQueue=new Map();
 async function setFavorite(i){
-  if(favoriteBusy.has(i))return;
-  favoriteBusy.add(i);
-  try{
+  const key=String(i);
+  const previous=favoriteQueue.get(key)||Promise.resolve();
+  const job=previous.catch(()=>{}).then(async()=>{
     const dbRecipe=await get(S.recipes,i);
     if(!dbRecipe)return;
     const next={...dbRecipe, favorite:!dbRecipe.favorite, updatedAt:Date.now()};
-    // imageBlob は変更せず、そのままIndexedDBへ保持する。
+    // imageBlob は読み出した値をそのまま保持する。お気に入り処理で画像を生成・破棄しない。
     await put(S.recipes,next);
     const local=recipes.find(x=>x.id==i);
     if(local){
       local.favorite=next.favorite;
       local.updatedAt=next.updatedAt;
-      if(Object.prototype.hasOwnProperty.call(next,"imageBlob"))local.imageBlob=next.imageBlob;
+      local.imageBlob=dbRecipe.imageBlob;
     }
     if(currentRecipe&&currentRecipe.id==i){
       currentRecipe.favorite=next.favorite;
       currentRecipe.updatedAt=next.updatedAt;
-      if(Object.prototype.hasOwnProperty.call(next,"imageBlob"))currentRecipe.imageBlob=next.imageBlob;
+      currentRecipe.imageBlob=dbRecipe.imageBlob;
     }
-    const star=document.querySelector(`.card .star[data-recipe-id="${CSS.escape(String(i))}"]`);
-    if(star){
+    const stars=document.querySelectorAll(`.card .star[data-recipe-id="${CSS.escape(key)}"]`);
+    stars.forEach(star=>{
       star.textContent=next.favorite?"★":"☆";
       star.classList.toggle("on",!!next.favorite);
       star.setAttribute("aria-pressed",next.favorite?"true":"false");
-    }
-    if(filter==="fav"&&!next.favorite)renderList();
+    });
     updateDetailFavoriteButton();
-  }finally{
-    favoriteBusy.delete(i);
+    if(filter==="fav"&&!next.favorite)renderList();
+  });
+  favoriteQueue.set(key,job);
+  try{await job}finally{
+    if(favoriteQueue.get(key)===job)favoriteQueue.delete(key);
   }
 }
 async function fav(i){await setFavorite(i)}
