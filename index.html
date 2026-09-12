@@ -106,7 +106,7 @@ button{min-height:44px;padding:10px 14px;border:0;border-radius:10px;font-family
 </head>
 <body>
 <div class="container">
-<section id="listPage"><div style="font-size:10px;color:var(--sub);text-align:right">v2.11 IndexedDB</div>
+<section id="listPage"><div style="font-size:10px;color:var(--sub);text-align:right">v2.01 IndexedDB</div>
 <div class="search"><input id="search" placeholder="材料や料理名で検索..."><span id="clear" class="clear">×</span></div>
 <div class="filters"><button id="all" class="filter active">すべて</button><button id="fav" class="filter">お気に入り</button><select id="sort" class="sort"><option value="reg">登録順</option><option value="count">調理回数</option><option value="date">最終調理日</option></select></div>
 <div id="list" class="grid"></div></section>
@@ -161,47 +161,73 @@ async function load(){recipes=await all(S.recipes);shopping=await all(S.shopping
 function show(p){page=p;["list","detail","add","shopping","stock"].forEach(x=>$(x+"Page").classList.add("hidden"));$(p+"Page").classList.remove("hidden");document.querySelectorAll(".tabs button").forEach(x=>x.classList.remove("active"));$("tab-"+p)?.classList.add("active");if(p=="list")renderList();if(p=="shopping")renderShopping();if(p=="stock")renderStock();scrollTo(0,0)}
 function renderList(){let box=$("list");box.innerHTML="";let k=kata($("search").value.toLowerCase()),type=$("sort").value,G={};recipes.forEach(r=>{let hit=kata((r.title||"").toLowerCase()).includes(k)||(r.ingredients||[]).some(g=>(g.items||[]).some(x=>kata((x.name||"").toLowerCase()).includes(k)));if(hit&&(filter=="all"||r.favorite)){let g=r.group||"未分類";(G[g]??=[]).push(r)}});groups.forEach(g=>{if(!G[g])return;if(open[g]===undefined)open[g]=false;let ex=k||open[g],h=document.createElement("div");h.className="group";h.innerHTML=`<b>${esc(g)} <small>${ex?"▼":"▶"}</small></b><span class=moves><button>↑</button><button>↓</button></span>`;h.querySelector("b").onclick=()=>{open[g]=!open[g];renderList()};h.querySelectorAll("button")[0].onclick=()=>moveGroup(g,-1);h.querySelectorAll("button")[1].onclick=()=>moveGroup(g,1);box.appendChild(h);if(!ex)return;let a=[...G[g]];if(type=="count")a.sort((x,y)=>(y.cookCount||0)-(x.cookCount||0));if(type=="date")a.sort((x,y)=>new Date(y.lastCookedDate||0)-new Date(x.lastCookedDate||0));a.forEach(r=>{let c=document.createElement("div");c.className="card";let u=imageUrl(r);c.innerHTML=`<div class="star ${r.favorite?"on":""}" data-recipe-id="${esc(String(r.id))}" aria-label="お気に入り" aria-pressed="${r.favorite?"true":"false"}">${r.favorite?"★":"☆"}</div>${u?`<img src="${u}">`:`<div class=noimg>No Image</div>`}<div class=info><div class=title>${esc(r.title)}</div><div class=sub>${type=="date"?esc(r.lastCookedDate||"未"):"×"+(r.cookCount||0)}</div></div>`;c.querySelector(".star").onclick=e=>{e.stopPropagation();fav(r.id)};c.onclick=()=>detail(r.id);box.appendChild(c)})})}
 async function moveGroup(g,d){let i=groups.indexOf(g),j=i+d;if(j<0||j>=groups.length)return;[groups[i],groups[j]]=[groups[j],groups[i]];await put(S.settings,{key:"main",groups});renderList()}
-const favoriteQueue=new Map();
+const favoriteSaveState=new Map();
 async function setFavorite(i){
   const key=String(i);
-  const previous=favoriteQueue.get(key)||Promise.resolve();
-  const job=previous.catch(()=>{}).then(async()=>{
-    const r=recipes.find(x=>String(x.id)===key);
-    if(!r)return;
+  const r=recipes.find(x=>String(x.id)===key);
+  if(!r)return;
 
-    // 現在のレシピをIndexedDBから取得し、画像Blobを含む他のデータは変更しない。
-    const dbRecipe=await get(S.recipes,r.id);
-    if(!dbRecipe)return;
+  // 先に画面上の状態を切り替える。画像付きレシピでもUIをIndexedDB保存の完了待ちにしない。
+  r.favorite=!Boolean(r.favorite);
+  r.updatedAt=Date.now();
+  if(currentRecipe && String(currentRecipe.id)===key){
+    currentRecipe.favorite=r.favorite;
+    currentRecipe.updatedAt=r.updatedAt;
+  }
 
-    const next={...dbRecipe, favorite:!Boolean(dbRecipe.favorite), updatedAt:Date.now()};
-    await put(S.recipes,next);
-
-    // メモリ上のレシピもお気に入り状態だけ同期する。imageBlobはそのまま保持。
-    r.favorite=next.favorite;
-    r.updatedAt=next.updatedAt;
-    if(Object.prototype.hasOwnProperty.call(dbRecipe,"imageBlob")) r.imageBlob=dbRecipe.imageBlob;
-
-    if(currentRecipe && String(currentRecipe.id)===key){
-      currentRecipe.favorite=next.favorite;
-      currentRecipe.updatedAt=next.updatedAt;
-      if(Object.prototype.hasOwnProperty.call(dbRecipe,"imageBlob")) currentRecipe.imageBlob=dbRecipe.imageBlob;
-    }
-
-    // 画面全体を再描画せず、表示中のお気に入りボタンだけ更新する。
-    document.querySelectorAll('.card .star[data-recipe-id]').forEach(star=>{
-      if(star.getAttribute('data-recipe-id')!==key)return;
-      star.textContent=next.favorite?'★':'☆';
-      star.classList.toggle('on',!!next.favorite);
-      star.setAttribute('aria-pressed',next.favorite?'true':'false');
-    });
-    updateDetailFavoriteButton();
-
-    // 「お気に入り」フィルター中でOFFにした場合だけ一覧から除外する。
-    if(filter==='fav' && !next.favorite)renderList();
+  document.querySelectorAll('.card .star[data-recipe-id]').forEach(star=>{
+    if(star.getAttribute('data-recipe-id')!==key)return;
+    star.textContent=r.favorite?'★':'☆';
+    star.classList.toggle('on',!!r.favorite);
+    star.setAttribute('aria-pressed',r.favorite?'true':'false');
   });
-  favoriteQueue.set(key,job);
-  try{await job}finally{
-    if(favoriteQueue.get(key)===job)favoriteQueue.delete(key);
+  updateDetailFavoriteButton();
+
+  // お気に入りフィルター中でOFFにした場合だけ一覧から除外する。
+  if(filter==='fav' && !r.favorite)renderList();
+
+  // 同じレシピへの連打は最新状態だけを保存する。画像Blobを含むレコードの保存完了をUIが待たない。
+  let state=favoriteSaveState.get(key);
+  if(!state){
+    state={saving:false,dirty:false};
+    favoriteSaveState.set(key,state);
+  }
+  state.dirty=true;
+  if(state.saving)return;
+
+  state.saving=true;
+  try{
+    while(state.dirty){
+      state.dirty=false;
+      const latest=recipes.find(x=>String(x.id)===key);
+      if(!latest)break;
+      const snapshot={...latest};
+      await put(S.recipes,snapshot);
+      // 保存中にもう一度切り替えられていたら、最新状態をもう一度保存する。
+    }
+  }catch(e){
+    console.error('favorite save:',e);
+  }finally{
+    state.saving=false;
+    if(!state.dirty)favoriteSaveState.delete(key);
+    else void setFavoriteSaveOnly(key,state);
+  }
+}
+async function setFavoriteSaveOnly(i,state){
+  if(state.saving)return;
+  state.saving=true;
+  try{
+    while(state.dirty){
+      state.dirty=false;
+      const r=recipes.find(x=>String(x.id)===String(i));
+      if(!r)break;
+      await put(S.recipes,{...r});
+    }
+  }catch(e){
+    console.error('favorite save:',e);
+  }finally{
+    state.saving=false;
+    if(!state.dirty)favoriteSaveState.delete(String(i));
   }
 }
 async function fav(i){await setFavorite(i)}
