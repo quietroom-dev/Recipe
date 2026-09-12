@@ -106,7 +106,7 @@ button{min-height:44px;padding:10px 14px;border:0;border-radius:10px;font-family
 </head>
 <body>
 <div class="container">
-<section id="listPage"><div style="font-size:10px;color:var(--sub);text-align:right">v2.01 IndexedDB</div>
+<section id="listPage"><div style="font-size:10px;color:var(--sub);text-align:right">v2.11 IndexedDB</div>
 <div class="search"><input id="search" placeholder="材料や料理名で検索..."><span id="clear" class="clear">×</span></div>
 <div class="filters"><button id="all" class="filter active">すべて</button><button id="fav" class="filter">お気に入り</button><select id="sort" class="sort"><option value="reg">登録順</option><option value="count">調理回数</option><option value="date">最終調理日</option></select></div>
 <div id="list" class="grid"></div></section>
@@ -166,30 +166,38 @@ async function setFavorite(i){
   const key=String(i);
   const previous=favoriteQueue.get(key)||Promise.resolve();
   const job=previous.catch(()=>{}).then(async()=>{
-    const dbRecipe=await get(S.recipes,i);
+    const r=recipes.find(x=>String(x.id)===key);
+    if(!r)return;
+
+    // 現在のレシピをIndexedDBから取得し、画像Blobを含む他のデータは変更しない。
+    const dbRecipe=await get(S.recipes,r.id);
     if(!dbRecipe)return;
-    const next={...dbRecipe, favorite:!dbRecipe.favorite, updatedAt:Date.now()};
-    // imageBlob は読み出した値をそのまま保持する。お気に入り処理で画像を生成・破棄しない。
+
+    const next={...dbRecipe, favorite:!Boolean(dbRecipe.favorite), updatedAt:Date.now()};
     await put(S.recipes,next);
-    const local=recipes.find(x=>x.id==i);
-    if(local){
-      local.favorite=next.favorite;
-      local.updatedAt=next.updatedAt;
-      local.imageBlob=dbRecipe.imageBlob;
-    }
-    if(currentRecipe&&currentRecipe.id==i){
+
+    // メモリ上のレシピもお気に入り状態だけ同期する。imageBlobはそのまま保持。
+    r.favorite=next.favorite;
+    r.updatedAt=next.updatedAt;
+    if(Object.prototype.hasOwnProperty.call(dbRecipe,"imageBlob")) r.imageBlob=dbRecipe.imageBlob;
+
+    if(currentRecipe && String(currentRecipe.id)===key){
       currentRecipe.favorite=next.favorite;
       currentRecipe.updatedAt=next.updatedAt;
-      currentRecipe.imageBlob=dbRecipe.imageBlob;
+      if(Object.prototype.hasOwnProperty.call(dbRecipe,"imageBlob")) currentRecipe.imageBlob=dbRecipe.imageBlob;
     }
-    const stars=document.querySelectorAll(`.card .star[data-recipe-id="${CSS.escape(key)}"]`);
-    stars.forEach(star=>{
-      star.textContent=next.favorite?"★":"☆";
-      star.classList.toggle("on",!!next.favorite);
-      star.setAttribute("aria-pressed",next.favorite?"true":"false");
+
+    // 画面全体を再描画せず、表示中のお気に入りボタンだけ更新する。
+    document.querySelectorAll('.card .star[data-recipe-id]').forEach(star=>{
+      if(star.getAttribute('data-recipe-id')!==key)return;
+      star.textContent=next.favorite?'★':'☆';
+      star.classList.toggle('on',!!next.favorite);
+      star.setAttribute('aria-pressed',next.favorite?'true':'false');
     });
     updateDetailFavoriteButton();
-    if(filter==="fav"&&!next.favorite)renderList();
+
+    // 「お気に入り」フィルター中でOFFにした場合だけ一覧から除外する。
+    if(filter==='fav' && !next.favorite)renderList();
   });
   favoriteQueue.set(key,job);
   try{await job}finally{
