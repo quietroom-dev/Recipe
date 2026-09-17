@@ -107,7 +107,7 @@ button{min-height:44px;padding:10px 14px;border:0;border-radius:10px;font-family
 </head>
 <body>
 <div class="container">
-<section id="listPage"><div style="font-size:10px;color:var(--sub);text-align:right">v2.11 IndexedDB</div>
+<section id="listPage"><div style="font-size:10px;color:var(--sub);text-align:right">v2.01 IndexedDB</div>
 <div class="search"><input id="search" placeholder="材料や料理名で検索..."><span id="clear" class="clear">×</span></div>
 <div class="filters"><button id="all" class="filter active">すべて</button><button id="fav" class="filter">お気に入り</button><select id="sort" class="sort"><option value="reg">登録順</option><option value="count">調理回数</option><option value="date">最終調理日</option></select></div>
 <div id="list" class="grid"></div></section>
@@ -468,14 +468,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <script>
 async function backupWithImages(){
   try{
+    if(!db) await openDB();
     const ZipLib=(typeof JSZip!=="undefined")?JSZip:null;
     if(!ZipLib)throw new Error("ZIPライブラリを利用できません");
 
     const rs=await all(S.recipes);
     const sh=await all(S.shopping);
     const st=await all(S.stock);
-    const setting=await request(store(S.settings).get("main"));
-    const groups=setting&&Array.isArray(setting.groups)?setting.groups:[];
+    // バックアップ中に別トランザクションの objectStore を参照して
+    // NotFoundError (The object can not be found here.) になる経路を避け、
+    // 現在メモリ上で同期済みのグループ順をそのまま保存する。
+    const groupsBackup=Array.isArray(groups)?[...groups]:[];
 
     if(!rs.length){
       alert("バックアップするレシピがありません");
@@ -497,13 +500,21 @@ async function backupWithImages(){
         if(type.includes("png"))ext="png";
         else if(type.includes("webp"))ext="webp";
         else if(type.includes("gif"))ext="gif";
-        zip.file("images/"+r.id+"."+ext,await blob.arrayBuffer());
+        let imageData;
+        if(typeof blob.arrayBuffer==="function") imageData=await blob.arrayBuffer();
+        else imageData=await new Promise((resolve,reject)=>{
+          const fr=new FileReader();
+          fr.onload=()=>resolve(fr.result);
+          fr.onerror=()=>reject(fr.error||new Error("画像の読み込みに失敗しました"));
+          fr.readAsArrayBuffer(blob);
+        });
+        zip.file("images/"+r.id+"."+ext,imageData);
       }
     }
 
     zip.file("recipes.json",JSON.stringify(meta));
     zip.file("settings.json",JSON.stringify({
-      groupOrder:groups,
+      groupOrder:groupsBackup,
       shopping:sh,
       stock:st
     }));
